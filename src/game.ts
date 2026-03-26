@@ -1,8 +1,12 @@
 type Keys = {
   left: boolean
   right: boolean
+  leftJustPressed: boolean
+  rightJustPressed: boolean
   jumpJustPressed: boolean
 }
+
+type WallContact = 'left' | 'right' | null
 
 export class Game {
   private ctx: CanvasRenderingContext2D
@@ -18,7 +22,19 @@ export class Game {
   private displayH = this.WORLD_H
   private scale = 1
 
-  private keys: Keys = { left: false, right: false, jumpJustPressed: false }
+  private keys: Keys = {
+    left: false,
+    right: false,
+    leftJustPressed: false,
+    rightJustPressed: false,
+    jumpJustPressed: false
+  }
+
+  // Wall / jump rules.
+  private wallContact: WallContact = null
+  private wallJumpUsed = false
+  private airJumpAvailable = false
+  private wallJumpImpulseTime = 0
 
   // Level geometry (two fixed vertical walls + a ground platform).
   private readonly leftWallX = 60
@@ -39,7 +55,9 @@ export class Game {
   private readonly movement = {
     moveSpeed: 280, // px/s
     gravity: 2200, // px/s^2
-    jumpVelocity: 720 // px/s (upwards via negative vy)
+    jumpVelocity: 720, // px/s (upwards via negative vy)
+    wallJumpHorizontalVel: 320, // px/s push away from wall
+    wallJumpImpulseDuration: 0.14 // seconds to keep the push even without input
   }
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -84,8 +102,14 @@ export class Game {
     // Use codes so it works regardless of keyboard layout.
     if (e.repeat) return
 
-    if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.keys.left = true
-    if (e.code === 'ArrowRight' || e.code === 'KeyD') this.keys.right = true
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') {
+      this.keys.left = true
+      this.keys.leftJustPressed = true
+    }
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') {
+      this.keys.right = true
+      this.keys.rightJustPressed = true
+    }
 
     if (e.code === 'Space' || e.code === 'ArrowUp' || e.code === 'KeyW') {
       this.keys.jumpJustPressed = true
@@ -101,19 +125,47 @@ export class Game {
     // One-frame pulse so holding Space doesn't trigger repeated jumps.
     const jumpPressed = this.keys.jumpJustPressed
     this.keys.jumpJustPressed = false
+    const leftPressed = this.keys.leftJustPressed
+    const rightPressed = this.keys.rightJustPressed
+    this.keys.leftJustPressed = false
+    this.keys.rightJustPressed = false
 
-    // Horizontal movement.
-    if (this.keys.left && !this.keys.right) this.player.vx = -this.movement.moveSpeed
-    else if (this.keys.right && !this.keys.left) this.player.vx = this.movement.moveSpeed
-    else this.player.vx = 0
+    // Capture contact state from the start of the frame (from last collision resolution).
+    // This avoids losing wall contact when the player taps away from the wall and moves
+    // off it before the wall-jump check runs.
+    const wallContactAtStart = this.wallContact
+    const onGroundAtStart = this.player.onGround
+
+    // Slight horizontal "push" after a wall jump so the player can actually move away
+    // even if no left/right input is held.
+    this.wallJumpImpulseTime = Math.max(0, this.wallJumpImpulseTime - dt)
+
+    // Auto wall-jump: if touching a wall in midair and the player is holding away from it,
+    // assume they want to wall-jump (no jump key required).
+    if (!onGroundAtStart && wallContactAtStart && !this.wallJumpUsed) {
+      const wantsWallJump =
+        (wallContactAtStart === 'left' && (rightPressed || this.keys.right)) ||
+        (wallContactAtStart === 'right' && (leftPressed || this.keys.left))
+
+      if (wantsWallJump) {
+        const pushDir = wallContactAtStart === 'left' ? 1 : -1
+        this.player.vy = -this.movement.jumpVelocity
+        this.player.vx = pushDir * this.movement.wallJumpHorizontalVel
+        this.wallJumpImpulseTime = this.movement.wallJumpImpulseDuration
+        this.wallJumpUsed = true
+        this.airJumpAvailable = true
+      }
+    }
+
+    // Horizontal movement (unless wall-jump impulse is active).
+    if (this.wallJumpImpulseTime <= 0) {
+      if (this.keys.left && !this.keys.right) this.player.vx = -this.movement.moveSpeed
+      else if (this.keys.right && !this.keys.left) this.player.vx = this.movement.moveSpeed
+      else this.player.vx = 0
+    }
 
     // Physics.
     this.player.vy += this.movement.gravity * dt
-
-    if (jumpPressed && this.player.onGround) {
-      this.player.vy = -this.movement.jumpVelocity
-      this.player.onGround = false
-    }
 
     // Integrate.
     this.player.x += this.player.vx * dt
@@ -123,18 +175,30 @@ export class Game {
     this.resolveGroundCollision()
     this.resolveWallCollision()
 
-    // If we ended up on ground by resolving collision, allow next jump later.
+    // Jump decision (after collision resolution so onGround/wallContact are current).
+    if (jumpPressed) {
+      if (this.player.onGround) {
+        this.player.vy = -this.movement.jumpVelocity
+        this.player.onGround = false
+        this.airJumpAvailable = false
+      } else if (this.airJumpAvailable) {
+        // The second jump after the wall jump.
+        this.player.vy = -this.movement.jumpVelocity
+        this.airJumpAvailable = false
+      }
+    }
   }
 
   private resolveGroundCollision() {
-    const { x, w, y, h } = this.player
-    void x
-    void w
+    const { y, h } = this.player
 
     if (y + h >= this.groundY) {
       this.player.y = this.groundY - h
       this.player.vy = 0
       this.player.onGround = true
+      this.wallContact = null
+      this.wallJumpUsed = false
+      this.airJumpAvailable = false
     }
   }
 
@@ -145,10 +209,19 @@ export class Game {
     const beforeX = this.player.x
     this.player.x = Math.max(minX, Math.min(this.player.x, maxX))
 
-    if (this.player.x !== beforeX) {
-      // Stop horizontal motion against the wall.
-      this.player.vx = 0
+    if (this.player.x !== beforeX) this.player.vx = 0
+
+    // Only count as wall contact when airborne; ground should take precedence.
+    if (this.player.onGround) {
+      this.wallContact = null
+      return
     }
+
+    const touchingLeft = this.player.x === minX
+    const touchingRight = this.player.x === maxX
+    if (touchingLeft) this.wallContact = 'left'
+    else if (touchingRight) this.wallContact = 'right'
+    else this.wallContact = null
   }
 
   private render() {
@@ -190,7 +263,11 @@ export class Game {
     // HUD text (rendered in-canvas too, for visibility on canvas-only setups).
     ctx.fillStyle = 'rgba(255,255,255,0.92)'
     ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif'
-    ctx.fillText('A/D or Left/Right to move. Space/W/Up to jump.', 16, 26)
+    ctx.fillText(
+      'A/D or Left/Right to move. Space/W/Up to jump. Wall-jump when touching walls in air.',
+      16,
+      26
+    )
 
     ctx.restore()
   }
