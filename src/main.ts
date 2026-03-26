@@ -1,5 +1,6 @@
 import './styles.css'
 import { Game } from './game'
+import { WORLD_H, WORLD_W } from './world'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement | null
 if (!canvas) {
@@ -11,8 +12,6 @@ const game = new Game(canvas)
 function fitCanvasToWindow() {
   // Keep a consistent "world" coordinate system inside the Game class.
   // We scale the canvas display size and then scale rendering accordingly.
-  const WORLD_W = 900
-  const WORLD_H = 500
   const padding = 24
   const maxW = Math.max(320, window.innerWidth - padding * 2)
   const targetW = Math.min(WORLD_W, maxW)
