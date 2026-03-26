@@ -57,7 +57,8 @@ export class Game {
     gravity: 2200, // px/s^2
     jumpVelocity: 720, // px/s (upwards via negative vy)
     wallJumpHorizontalVel: 320, // px/s push away from wall
-    wallJumpImpulseDuration: 0.14 // seconds to keep the push even without input
+    wallJumpImpulseDuration: 0.14, // seconds to keep the push even without input
+    wallSlideMaxFallSpeed: 200 // px/s (downwards cap when pressing into a wall)
   }
 
   constructor(private canvas: HTMLCanvasElement) {
@@ -174,6 +175,14 @@ export class Game {
     // Collisions with ground and walls (simple AABB resolution via clamps).
     this.resolveGroundCollision()
     this.resolveWallCollision()
+
+    // Wall slide: if airborne, touching a wall, and pressing into it, cap downward speed.
+    const pressingIntoLeftWall = this.wallContact === 'left' && this.keys.left
+    const pressingIntoRightWall = this.wallContact === 'right' && this.keys.right
+    const wallSliding = !this.player.onGround && (pressingIntoLeftWall || pressingIntoRightWall)
+    if (wallSliding && this.player.vy > this.movement.wallSlideMaxFallSpeed) {
+      this.player.vy = this.movement.wallSlideMaxFallSpeed
+    }
 
     // Jump decision (after collision resolution so onGround/wallContact are current).
     if (jumpPressed) {
