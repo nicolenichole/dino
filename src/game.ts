@@ -204,7 +204,8 @@ export class Game {
 
   private resolveWallCollision() {
     const minX = this.leftWallX + this.wallThickness
-    const maxX = this.rightWallX - this.wallThickness - this.player.w
+    // `rightWallX` is the wall's left edge, so the inner face is exactly at `rightWallX`.
+    const maxX = this.rightWallX - this.player.w
 
     const beforeX = this.player.x
     this.player.x = Math.max(minX, Math.min(this.player.x, maxX))
@@ -260,7 +261,7 @@ export class Game {
     ctx.strokeStyle = 'rgba(255,255,255,0.35)'
     ctx.strokeRect(p.x, p.y, p.w, p.h)
 
-    // HUD text (rendered in-canvas too, for visibility on canvas-only setups).
+    // HUD text (rendered in-canvas too, for visibiblity on canvas-only setups).
     ctx.fillStyle = 'rgba(255,255,255,0.92)'
     ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif'
     ctx.fillText(
