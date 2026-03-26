@@ -18,7 +18,19 @@ export type Player = {
   vx: number
   vy: number
   onGround: boolean
+  /** Seconds left for swing animation; 0 means idle (rest pose). */
+  clubSwingRemaining: number
+  /** 1 = face right, -1 = face left; updated when `vx !== 0`. */
+  facing: 1 | -1
 }
+
+const CLUB_SWING_DURATION = 0.22
+/** Angle (radians): idle / chambered—tip offset uses y'=-L*cos(θ) under ctx.rotate. */
+const CLUB_ANGLE_REST = 0.5
+/** Angle (radians): follow-through—larger than REST so rotation is clockwise (canvas +θ = CW). Same |θ| as before keeps tip low. */
+const CLUB_ANGLE_DOWN = 2.35
+const CLUB_LENGTH = 50
+const CLUB_THICKNESS = 9
 
 export type PlayerController = {
   wallContact: WallContact
@@ -46,8 +58,26 @@ export function createPlayer(groundLevelY: number): Player {
     y: groundLevelY - h,
     vx: 0,
     vy: 0,
-    onGround: true
+    onGround: true,
+    clubSwingRemaining: 0,
+    facing: 1
   }
+}
+
+export function startClubSwing(player: Player): void {
+  player.clubSwingRemaining = CLUB_SWING_DURATION
+}
+
+export function updateClubSwing(dt: number, player: Player): void {
+  if (player.clubSwingRemaining <= 0) return
+  player.clubSwingRemaining = Math.max(0, player.clubSwingRemaining - dt)
+}
+
+function clubSwingAngle(player: Player): number {
+  if (player.clubSwingRemaining <= 0) return CLUB_ANGLE_REST
+  const t = 1 - player.clubSwingRemaining / CLUB_SWING_DURATION
+  const eased = t * t * (3 - 2 * t)
+  return CLUB_ANGLE_REST + eased * (CLUB_ANGLE_DOWN - CLUB_ANGLE_REST)
 }
 
 export function createPlayerController(): PlayerController {
@@ -160,18 +190,74 @@ export function updatePlayer(
       ctrl.airJumpAvailable = false
     }
   }
+
+  if (player.vx !== 0) player.facing = player.vx > 0 ? 1 : -1
 }
 
 export function drawPlayer(ctx: CanvasRenderingContext2D, player: Player): void {
   const p = player
-  ctx.fillStyle = '#37a7ff'
-  ctx.fillRect(p.x, p.y, p.w, p.h)
+  const w = p.w
+  const h = p.h
+  const cx = p.x + w / 2
+  const baseY = p.y
 
+  ctx.save()
+  ctx.translate(cx, baseY)
+  ctx.scale(p.facing, 1)
+
+  ctx.fillStyle = '#37a7ff'
+  ctx.beginPath()
+  ctx.roundRect(-w / 2, 0, w, h, 8)
+  ctx.fill()
+
+  ctx.fillStyle = 'rgba(255,255,255,0.22)'
+  ctx.beginPath()
+  ctx.ellipse(w * 0.12, h * 0.52, w * 0.22, h * 0.2, 0, 0, Math.PI * 2)
+  ctx.fill()
+
+  ctx.fillStyle = '#2d8bc4'
+  ctx.beginPath()
+  ctx.roundRect(w / 2 - 16, 20, 14, 16, 5)
+  ctx.fill()
+
+  const eyeY = 18
+  const eyeSize = 6
   ctx.fillStyle = 'rgba(0,0,0,0.45)'
-  const eyeY = p.y + 18
-  ctx.fillRect(p.x + 12, eyeY, 6, 6)
-  ctx.fillRect(p.x + p.w - 18, eyeY, 6, 6)
+  ctx.fillRect(-w / 2 + 12, eyeY, eyeSize, eyeSize)
+  ctx.fillRect(w / 2 - 18, eyeY, eyeSize, eyeSize)
+
+  ctx.fillStyle = 'rgba(0,0,0,0.75)'
+  const pupilOff = 2
+  ctx.fillRect(-w / 2 + 12 + pupilOff, eyeY + 2, 2, 2)
+  ctx.fillRect(w / 2 - 18 + pupilOff, eyeY + 2, 2, 2)
 
   ctx.strokeStyle = 'rgba(255,255,255,0.35)'
-  ctx.strokeRect(p.x, p.y, p.w, p.h)
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.roundRect(-w / 2, 0, w, h, 8)
+  ctx.stroke()
+
+  ctx.restore()
+
+  drawClub(ctx, p)
+}
+
+export function drawClub(ctx: CanvasRenderingContext2D, player: Player): void {
+  const p = player
+  const handT = p.facing > 0 ? 0.86 : 0.14
+  const pivotX = p.x + p.w * handT
+  const pivotY = p.y + p.h * 0.4
+  const angle = clubSwingAngle(p)
+  ctx.save()
+  ctx.translate(pivotX, pivotY)
+  ctx.scale(p.facing, 1)
+  ctx.rotate(angle)
+  ctx.fillStyle = '#6b4a2d'
+  ctx.beginPath()
+  ctx.roundRect(-CLUB_THICKNESS / 2, -CLUB_LENGTH, CLUB_THICKNESS, CLUB_LENGTH, 4)
+  ctx.fill()
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+  ctx.lineWidth = 1
+  ctx.stroke()
+  ctx.restore()
 }

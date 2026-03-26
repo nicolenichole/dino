@@ -3,9 +3,11 @@ import {
   createPlayer,
   createPlayerController,
   drawPlayer,
+  startClubSwing,
   type Player,
   type PlayerController,
   type PlayerKeys,
+  updateClubSwing,
   updatePlayer
 } from './player'
 import { WORLD_H, WORLD_W, drawWorld, groundY } from './world'
@@ -39,6 +41,12 @@ export class Game {
 
     window.addEventListener('keydown', (e) => this.onKeyDown(e))
     window.addEventListener('keyup', (e) => this.onKeyUp(e))
+    this.canvas.addEventListener('pointerdown', (e) => this.onCanvasPointerDown(e))
+  }
+
+  private onCanvasPointerDown(e: PointerEvent) {
+    e.preventDefault()
+    startClubSwing(this.player)
   }
 
   setDisplaySize(displayW: number, displayH: number) {
@@ -94,6 +102,7 @@ export class Game {
 
   private update(dt: number) {
     updatePlayer(dt, this.player, this.playerController, this.keys)
+    updateClubSwing(dt, this.player)
   }
 
   private render() {
@@ -109,7 +118,7 @@ export class Game {
     ctx.fillStyle = 'rgba(255,255,255,0.92)'
     ctx.font = '14px system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif'
     ctx.fillText(
-      'A/D or Left/Right to move. Space/W/Up to jump. Wall-jump when touching walls in air.',
+      'A/D or Left/Right to move. Space/W/Up to jump. Wall-jump when touching walls in air. Click to swing club.',
       16,
       26
     )
