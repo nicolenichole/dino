@@ -78,7 +78,11 @@ function resolveWallCollision(player: Player, ctrl: PlayerController): void {
   const beforeX = player.x
   player.x = Math.max(minX, Math.min(player.x, maxX))
 
-  if (player.x !== beforeX) player.vx = 0
+  const hitWallThisFrame = player.x !== beforeX
+  if (hitWallThisFrame) {
+    player.vx = 0
+    if (!player.onGround && player.vy < 0) player.vy = 0
+  }
 
   if (player.onGround) {
     ctrl.wallContact = null
